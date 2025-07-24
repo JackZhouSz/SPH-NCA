@@ -1,6 +1,10 @@
 SPH-NCA
 =============
 
+[[Interactive Demo](https://hyunsoo0o0o0.github.io/SPH-NCA/)]
+
+![Demo page example](docs/media/demo-page.gif)
+
 Official repository for SIGGRAPH 2025 Poster `Train Once, Generate Anywhere: Discretization Agnostic Neural Cellular Automata using SPH Method`
 
 
