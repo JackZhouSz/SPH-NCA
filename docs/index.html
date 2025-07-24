@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPH-NCA Interactive Demo</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-G8RWC0F61J"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-G8RWC0F61J');
+</script>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>SPH-NCA Interactive Demo</h1>
+            <h3>Train Once, Generate Anywhere: Discretization Agnostic Neural Cellular Automata using SPH Method</h3>
+            <!-- Authors & Affiliations -->
+            <div class="header-info">
+                <p class="authors">
+                    <a href="https://linktr.ee/k__hyunsoo" target="_blank">Hyunsoo Kim</a>,
+                    <a href="#" target="_blank">Jinah Park</a>
+                </p>
+                <p class="affiliation">Computer Graphics and Visualization Lab, KAIST</p>
+                <p class="event">SIGGRAPH 2025 Posters</p>
+            </div>
+
+            <div class="header-buttons">
+                <a class="btn btn-secondary" href="media/abstract.pdf"><i class="fas fa-file-pdf"></i> Preprint</a>
+                <a class="btn btn-secondary" href="https://github.com/hyunsoo0o0o0/SPH-NCA"><i class="fab fa-github"></i> Code</a>
+                <a class="btn btn-secondary" href="media/poster.pdf"><i class="fas fa-image"></i> Poster</a>
+            </div>
+        </header>
+        
+        <main>
+            <div class="canvas-container">
+                <canvas id="canvas"></canvas>
+                <div id="error" class="error-message" style="display: none;"></div>
+            </div>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <h3>Weight</h3>
+                    <div class="select-group">
+                        <select id="weightSelector">
+                            <option value="gecko">Gecko</option>
+                            <option value="zebra">Zebra</option>
+                            <option value="jellybean">Jellybean</option>
+                            <option value="siggraph" selected>SIGGRAPH</option>
+                        </select>
+                        <button id="loadWeights" class="btn btn-secondary">Load & Reset</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>Inference settings</h3>
+                    <div class="select-group">
+                        <label for="pointPattern">Point Pattern:</label>
+                        <select id="pointPattern">
+                            <option value="square" selected>Square Grid</option>
+                            <option value="hexagonal">Hexagonal Grid</option>
+                        </select>
+                    </div>
+                    <div class="slider-group">
+                        <label for="resolution">Resolution:</label>
+                        <input type="range" id="resolution" min="1" max="5" step="1" value="2">
+                        <span id="resolutionValue">64</span>
+                    </div>
+                    <div class="slider-group">
+                        <label for="noise">Noise:</label>
+                        <input type="range" id="noise" min="0" max="1" value="0" step="0.1">
+                        <span id="noiseValue">0.0</span>
+                    </div>
+                    <div class="checkbox-group">
+                        <label>
+                            <input type="checkbox" id="spatialNoise">
+                            Spatially Varying Noise
+                        </label>
+                    </div>
+
+                    <button id="applyPointPattern" class="btn btn-secondary">Apply & Reset</button>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Inference control</h3>
+                    <div class="button-group">
+                        <button id="playPause" class="btn btn-primary">Pause</button>
+                        <button id="reset" class="btn btn-secondary">Reset</button>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Interaction</h3>
+                    <div class="slider-group">
+                        <label for="brushRadius">Brush Radius:</label>
+                        <input type="range" id="brushRadius" min="0.01" max="0.5" value="0.16" step="0.01">
+                        <span id="brushRadiusValue">0.16</span>
+                    </div>
+                    <div class="select-group">
+                        <label for="brushType">Brush Type:</label>
+                        <select id="brushType">
+                            <option value="seed" selected>Seed</option>
+                            <option value="randomize">Randomize</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Visualization</h3>
+                    <div class="select-group">
+                        <label for="colorMode">Color Mode:</label>
+                        <select id="colorMode">
+                            <option value="rgba">RGBA</option>
+                            <option value="activity">Activity</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <h3>About</h3>
+                    <p class="about-text">
+                        See how SPH-NCA evolves over time with different weights and parameters using this interactive demo.
+                        All pretrained weights are trained only on a square grid with 64x64 resolution.
+                    </p>
+                    <p class="about-text">
+                        This implementation of SPH-NCA runs entirely in your browser, using JavaScript.
+                    </p>
+                </div>
+            </div>
+        </main>
+        
+        <section class="info-section">
+            <h2>Example Videos</h2>
+            <div class="video-gallery">
+                <div class="video-item">
+                    <h3>RGBA Image</h3>
+                    <p>Trained on a 128x128 grid, generating on a 512x512 grid</p>
+                    <video controls loop autoplay muted>
+                        <source src="media/gecko-512.mp4" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="video-item">
+                    <h3>Exemplar-guided Texture</h3>
+                    <p>Trained on a 128x128 grid, generating on a irregular grid</p>
+                    <video controls loop autoplay muted>
+                        <source src="media/zebra-irregular.mp4" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+                <div class="video-item">
+                    <h3>Text-guided Texture</h3>
+                    <p>Trained on a 128x128 grid, generating on a 3D surface</p>
+                    <video controls loop autoplay muted>
+                        <source src="media/jellybean-bunny.mp4" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <p>
+                Enjoyed the demo? Meet me at SIGGRAPH 2025! Add to your schedule <a href="https://s2025.conference-schedule.org/presentation/?id=pos_204&sess=sess404" target="_blank">here</a>.
+            </p>
+        </footer>
+    </div>
+    
+    <!-- Load the main application as ES6 module -->
+    <script type="module" src="main.js"></script>
+    
+    <!-- Additional UI interactions -->
+    <script>
+        // Update slider value displays
+        document.addEventListener('DOMContentLoaded', function() {            
+            // Resolution slider
+            const resolutionSlider = document.getElementById('resolution');
+            const resolutionValue = document.getElementById('resolutionValue');
+            
+            if (resolutionSlider && resolutionValue) {
+                // Map slider values to actual resolution values
+                const resolutionMap = {
+                    1: 50,
+                    2: 64,
+                    3: 80,
+                    4: 100,
+                    5: 128
+                };
+                
+                // Set initial value
+                resolutionValue.textContent = resolutionMap[resolutionSlider.value];
+                
+                resolutionSlider.addEventListener('input', function() {
+                    resolutionValue.textContent = resolutionMap[this.value];
+                });
+            }
+
+            const fireRateSlider = document.getElementById('fireRate');
+            const fireRateValue = document.getElementById('fireRateValue');
+            if (fireRateSlider && fireRateValue) {
+                fireRateValue.textContent = parseFloat(fireRateSlider.value).toFixed(1);
+                fireRateSlider.addEventListener('input', function() {
+                    fireRateValue.textContent = parseFloat(this.value).toFixed(1);
+                });
+            }
+            
+            // Noise slider
+            const noiseSlider = document.getElementById('noise');
+            const noiseValue = document.getElementById('noiseValue');
+            
+            if (noiseSlider && noiseValue) {
+                noiseSlider.addEventListener('input', function() {
+                    noiseValue.textContent = parseFloat(this.value).toFixed(1);
+                });
+            }
+
+            // Parameters sliders
+            const brushRadiusSlider = document.getElementById('brushRadius');
+            const brushRadiusValue = document.getElementById('brushRadiusValue');
+            if (brushRadiusSlider && brushRadiusValue) {
+                brushRadiusValue.textContent = parseFloat(brushRadiusSlider.value).toFixed(2);
+                
+                brushRadiusSlider.addEventListener('input', function() {
+                    brushRadiusValue.textContent = parseFloat(this.value).toFixed(2);
+                });
+            }
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(event) {
+                switch(event.code) {
+                    case 'Space':
+                        event.preventDefault();
+                        const playPauseBtn = document.getElementById('playPause');
+                        if (playPauseBtn) playPauseBtn.click();
+                        break;
+                    case 'KeyR':
+                        if (event.ctrlKey || event.metaKey) {
+                            event.preventDefault();
+                            const resetBtn = document.getElementById('reset');
+                            if (resetBtn) resetBtn.click();
+                        }
+                        break;
+                }
+            });
+            
+            // Canvas context menu prevention
+            const canvas = document.getElementById('canvas');
+            if (canvas) {
+                canvas.addEventListener('contextmenu', function(event) {
+                    event.preventDefault();
+                });
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+services:
+  sph-nca:
+    build: .
+    volumes:
+      - ./code/:/home/cgv/code
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

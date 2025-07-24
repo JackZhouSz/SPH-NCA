@@ -1,0 +1,18 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
+numba==0.61.2
+numba-cuda[cu11]==0.16.0
+einops==0.8.1
+
+# Training
+tqdm==4.67.1
+
+# Text-guiding CLIP loss
+open_clip_torch==2.32.0
+
+# Mesh processing
+trimesh==4.7.1
+scipy==1.16.0
+fpsample==0.3.3
