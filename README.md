@@ -63,7 +63,7 @@ $ bash test-example.sh ./checkpoints/GENERATED_CHECKPOINT.pt
         - [License for Stanford bunny](https://graphics.stanford.edu/data/3Dscanrep/)
         - [License for Describable Texture Dataset](https://www.robots.ox.ac.uk/~vgg/data/dtd/index.html)
     - `sphops/`: Differentiable SPH operations with Numba CUDA.
-- `docs/`: A web-based demonstration of the SPH-NCA model.
+- `docs/`: A web-based demonstration of the SPH-NCA model. Almost every line is vibe-coded so don't expect much :/
     - `weights/`: Pre-trained weights.
 - `requirements.txt`: Python package dependencies for `pip` and `venv`. Tested environment (i.e., mine) use this.
 - `environment.yml`: Same, but for Conda/Mamba. Docker uses this.

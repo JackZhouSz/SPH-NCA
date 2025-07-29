@@ -231,10 +231,10 @@ function update() {
     }
     
     // Rebuild hash grid
-    workerState.hashGrid.build(workerState.points);
+    // workerState.hashGrid.build(workerState.points);
     
     // Calculate volumes
-    workerState.volumes = operators.calculate_volumes(workerState.points, workerState.hashGrid, workerState.config.h);
+    // workerState.volumes = operators.calculate_volumes(workerState.points, workerState.hashGrid, workerState.config.h);
     
     // Run NCA forward pass
     workerState.attributes = workerState.nca.forward(

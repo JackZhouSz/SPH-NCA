@@ -33,6 +33,15 @@ export class NCA {
         // Input is [A, gA_x, gA_y] so cell features = input_features / 3
         this.cellFeatures = Math.floor(this.inputFeatures / 3);
         
+        // Pre-allocate memory pools for batch processing
+        this.maxParticles = 8192 * 4; // Support up to 8K particles
+        this.inputBuffer = new Float32Array(this.maxParticles * this.inputFeatures);
+        this.hiddenBuffer = new Float32Array(this.maxParticles * this.hiddenFeatures);
+        this.outputBuffer = new Float32Array(this.maxParticles * this.outputFeatures);
+        
+        // Initialize TensorFlow.js tensors for GPU acceleration
+        this.initializeTensorFlowTensors();
+        
         console.log('NCA Model initialized:');
         console.log(`  Cell features: ${this.cellFeatures}`);
         console.log(`  Input features: ${this.inputFeatures}`);
@@ -40,8 +49,48 @@ export class NCA {
         console.log(`  Output features: ${this.outputFeatures}`);
         console.log(`  Fire rate: ${this.fireRate}`);
         console.log(`  Update rule: ${this.updateRule}`);
+        console.log(`  Memory pools allocated for ${this.maxParticles} particles`);
+        console.log(`  TensorFlow.js backend: ${typeof tf !== 'undefined' ? tf.getBackend() : 'not available'}`);
     }
     
+    /**
+     * Initialize TensorFlow.js tensors from weights
+     */
+    initializeTensorFlowTensors() {
+        // Check if TensorFlow.js is available
+        if (typeof tf === 'undefined') {
+            console.warn('TensorFlow.js not available, using fallback implementation');
+            this.useTensorFlow = false;
+            return;
+        }
+        
+        try {
+            // Convert weight matrices to tensors (transposed for efficient matmul)
+            this.layer1WeightTensor = tf.tensor2d(this.layer1_weight).transpose();
+            this.layer1BiasTensor = tf.tensor1d(this.layer1_bias);
+            this.layer2WeightTensor = tf.tensor2d(this.layer2_weight).transpose();
+            this.layer2BiasTensor = tf.tensor1d(this.layer2_bias);
+            
+            this.useTensorFlow = true;
+            console.log('TensorFlow.js tensors initialized successfully');
+        } catch (error) {
+            console.warn('Failed to initialize TensorFlow.js tensors:', error);
+            this.useTensorFlow = false;
+        }
+    }
+    
+    /**
+     * Dispose of TensorFlow.js tensors to free memory
+     */
+    dispose() {
+        if (this.useTensorFlow) {
+            this.layer1WeightTensor?.dispose();
+            this.layer1BiasTensor?.dispose();
+            this.layer2WeightTensor?.dispose();
+            this.layer2BiasTensor?.dispose();
+        }
+    }
+
     /**
      * Linear layer forward pass
      * @param {Array} input - Input vector
@@ -91,6 +140,229 @@ export class NCA {
     }
     
     /**
+     * Batch linear layer forward pass
+     * @param {Float32Array} inputMatrix - Input matrix [numParticles * inputSize]
+     * @param {Array} weight - Weight matrix [outputSize x inputSize]
+     * @param {Array} bias - Bias vector [outputSize]
+     * @param {number} numParticles - Number of particles
+     * @param {Float32Array} outputMatrix - Pre-allocated output buffer
+     * @returns {Float32Array} Output matrix [numParticles * outputSize]
+     */
+    _batchLinear(inputMatrix, weight, bias, numParticles, outputMatrix) {
+        const inputSize = weight[0].length;
+        const outputSize = weight.length;
+        
+        // Optimized matrix multiplication: Output = Input * Weight^T + Bias
+        for (let p = 0; p < numParticles; p++) {
+            for (let o = 0; o < outputSize; o++) {
+                let sum = bias[o];
+                for (let i = 0; i < inputSize; i++) {
+                    sum += inputMatrix[p * inputSize + i] * weight[o][i];
+                }
+                outputMatrix[p * outputSize + o] = sum;
+            }
+        }
+        
+        return outputMatrix;
+    }
+    
+    /**
+     * Batch ReLU activation function
+     * @param {Float32Array} matrix - Input/output matrix
+     * @param {number} length - Total number of elements
+     */
+    _batchRelu(matrix, length) {
+        for (let i = 0; i < length; i++) {
+            matrix[i] = Math.max(0, matrix[i]);
+        }
+    }
+    
+    /**
+     * Batch sigmoid activation function
+     * @param {Float32Array} matrix - Input/output matrix
+     * @param {number} length - Total number of elements
+     */
+    _batchSigmoid(matrix, length) {
+        for (let i = 0; i < length; i++) {
+            matrix[i] = 1 / (1 + Math.exp(-matrix[i]));
+        }
+    }
+    
+    /**
+     * Batch tanh activation function
+     * @param {Float32Array} matrix - Input/output matrix
+     * @param {number} length - Total number of elements
+     */
+    _batchTanh(matrix, length) {
+        for (let i = 0; i < length; i++) {
+            matrix[i] = Math.tanh(matrix[i]);
+        }
+    }
+    
+    /**
+     * Prepare input batch for neural network processing
+     * @param {Array} attributes - Particle attributes [N x F]
+     * @param {Array} gradients - Particle gradients [N x F x 2]
+     * @param {number} numPoints - Number of particles
+     * @param {number} h - Current kernel radius
+     * @returns {Float32Array} Input matrix [numParticles * inputFeatures]
+     */
+    _prepareInputBatch(attributes, gradients, numPoints, h) {
+        const inputMatrix = this.inputBuffer.subarray(0, numPoints * this.inputFeatures);
+        
+        // Vectorized copy of attributes, gradient_x, gradient_y
+        for (let i = 0; i < numPoints; i++) {
+            const offset = i * this.inputFeatures;
+            
+            // Copy attributes [A]
+            for (let f = 0; f < this.cellFeatures; f++) {
+                inputMatrix[offset + f] = attributes[i][f] || 0;
+            }
+            
+            // Copy gradient_x [gA_x]
+            for (let f = 0; f < this.cellFeatures; f++) {
+                inputMatrix[offset + this.cellFeatures + f] = 
+                    gradients[i][f] ? gradients[i][f][0] * h / this.h : 0;
+            }
+            
+            // Copy gradient_y [gA_y]
+            for (let f = 0; f < this.cellFeatures; f++) {
+                inputMatrix[offset + 2 * this.cellFeatures + f] = 
+                    gradients[i][f] ? gradients[i][f][1] * h / this.h : 0;
+            }
+        }
+        
+        return inputMatrix;
+    }
+    
+    /**
+     * Batch neural network forward pass (TensorFlow.js optimized)
+     * @param {Float32Array} inputMatrix - Input matrix [numParticles * inputFeatures]
+     * @param {number} numPoints - Number of particles
+     * @returns {Float32Array} Output matrix [numParticles * outputFeatures]
+     */
+    _forwardBatch(inputMatrix, numPoints) {
+        // Use TensorFlow.js if available, otherwise fallback to manual implementation
+        if (this.useTensorFlow) {
+            return tf.tidy(() => {
+                // Create input tensor from Float32Array
+                const inputTensor = tf.tensor2d(Array.from(inputMatrix.subarray(0, numPoints * this.inputFeatures)), [numPoints, this.inputFeatures]);
+                
+                // Layer 1: Input -> Hidden with ReLU
+                const hidden = tf.relu(
+                    tf.add(
+                        tf.matMul(inputTensor, this.layer1WeightTensor),
+                        this.layer1BiasTensor
+                    )
+                );
+                
+                // Layer 2: Hidden -> Output
+                const output = tf.add(
+                    tf.matMul(hidden, this.layer2WeightTensor),
+                    this.layer2BiasTensor
+                );
+                
+                // Convert back to Float32Array
+                const outputData = output.dataSync();
+                const outputMatrix = this.outputBuffer.subarray(0, numPoints * this.outputFeatures);
+                outputMatrix.set(outputData);
+                return outputMatrix;
+            });
+        } else {
+            // Fallback to manual batch processing
+            // Layer 1: Input -> Hidden
+            const hiddenMatrix = this.hiddenBuffer.subarray(0, numPoints * this.hiddenFeatures);
+            this._batchLinear(
+                inputMatrix, 
+                this.layer1_weight, 
+                this.layer1_bias, 
+                numPoints,
+                hiddenMatrix
+            );
+            this._batchRelu(hiddenMatrix, numPoints * this.hiddenFeatures);
+            
+            // Layer 2: Hidden -> Output  
+            const outputMatrix = this.outputBuffer.subarray(0, numPoints * this.outputFeatures);
+            this._batchLinear(
+                hiddenMatrix,
+                this.layer2_weight,
+                this.layer2_bias,
+                numPoints,
+                outputMatrix
+            );
+            
+            return outputMatrix;
+        }
+    }
+    
+    /**
+     * Apply update rule to batch of particles
+     * @param {Array} attributes - Original attributes [N x F]
+     * @param {Float32Array} outputMatrix - NN output matrix [numParticles * outputFeatures]
+     * @param {number} numPoints - Number of particles
+     * @param {number} currentFireRate - Fire rate to apply
+     * @returns {Array} New attributes [N x F]
+     */
+    _applyUpdateRule(attributes, outputMatrix, numPoints, currentFireRate) {
+        const newAttributes = new Array(numPoints);
+        
+        for (let i = 0; i < numPoints; i++) {
+            const outputOffset = i * this.outputFeatures;
+            
+            // Apply fire rate mask
+            const shouldUpdate = Math.random() <= currentFireRate;
+            if (!shouldUpdate) {
+                newAttributes[i] = [...attributes[i]];
+                continue;
+            }
+            
+            let newA;
+            if (this.updateRule === 'gated') {
+                // Gated update: A_new = A * gate + delta * mult
+                newA = new Array(this.cellFeatures);
+                
+                // Extract gate, delta, mult from output
+                for (let f = 0; f < this.cellFeatures; f++) {
+                    const gate = 1 / (1 + Math.exp(-outputMatrix[outputOffset + f])); // sigmoid
+                    const delta = Math.tanh(outputMatrix[outputOffset + this.cellFeatures + f]);
+                    const mult = 1 / (1 + Math.exp(-outputMatrix[outputOffset + 2 * this.cellFeatures])); // sigmoid of last element
+                    
+                    newA[f] = attributes[i][f] * gate + delta * mult;
+                }
+            } else {
+                // Original update rule: A_new = A + dA * fire_rate
+                newA = new Array(this.cellFeatures);
+                for (let f = 0; f < this.cellFeatures; f++) {
+                    newA[f] = attributes[i][f] + outputMatrix[outputOffset + f] * currentFireRate;
+                }
+            }
+            
+            newAttributes[i] = newA;
+        }
+        
+        return newAttributes;
+    }
+    
+    /**
+     * Apply life mask to attributes
+     * @param {Array} newAttributes - Attributes to modify
+     * @param {Array} prevMask - Previous life mask
+     * @param {Array} newMask - New life mask
+     * @param {number} numPoints - Number of particles
+     */
+    _applyLifeMask(newAttributes, prevMask, newMask, numPoints) {
+        for (let i = 0; i < numPoints; i++) {
+            const isLiving = prevMask[i] && newMask[i];
+            if (!isLiving) {
+                // Kill the cell
+                for (let f = 0; f < this.cellFeatures; f++) {
+                    newAttributes[i][f] = 0;
+                }
+            }
+        }
+    }
+    
+    /**
      * Perceive function - calculates gradients using SPH
      * @param {Array} points - Particle positions
      * @param {Array} volumes - Particle volumes
@@ -134,7 +406,7 @@ export class NCA {
     }
     
     /**
-     * Forward pass of the NCA model
+     * Forward pass of the NCA model (OPTIMIZED)
      * @param {Array} points - Particle positions
      * @param {Array} volumes - Particle volumes
      * @param {Array} attributes - Particle attributes [N x F]
@@ -144,6 +416,51 @@ export class NCA {
      * @returns {Array} Updated attributes [N x F]
      */
     forward(points, volumes, attributes, h, hashGrid, fireRate = null, useAlpha = true) {
+        const numPoints = points.length;
+        const currentFireRate = fireRate !== null ? fireRate : this.fireRate;
+        
+        // Check if we exceed buffer capacity
+        if (numPoints > this.maxParticles) {
+            console.warn(`Particle count ${numPoints} exceeds buffer capacity ${this.maxParticles}. Falling back to original implementation.`);
+            return this._forwardOriginal(points, volumes, attributes, h, hashGrid, fireRate, useAlpha);
+        }
+        
+        // 1. Calculate life mask before update
+        let prevMask = null;
+        if (useAlpha) {
+            prevMask = this._lifeMask(points, volumes, attributes, h, hashGrid);
+        }
+        
+        // 2. Perceive - calculate gradients
+        const gradients = this._perceive(points, volumes, attributes, h, hashGrid);
+        
+        // 3. OPTIMIZED: Batch NN processing
+        const inputMatrix = this._prepareInputBatch(attributes, gradients, numPoints, h);
+        const outputMatrix = this._forwardBatch(inputMatrix, numPoints);
+        
+        // 4. OPTIMIZED: Batch update rule application
+        const newAttributes = this._applyUpdateRule(attributes, outputMatrix, numPoints, currentFireRate);
+        
+        // 5. Final life mask and application
+        if (useAlpha) {
+            const newMask = this._lifeMask(points, volumes, newAttributes, h, hashGrid);
+            this._applyLifeMask(newAttributes, prevMask, newMask, numPoints);
+        }
+        
+        return newAttributes;
+    }
+    
+    /**
+     * Original forward pass implementation (fallback)
+     * @param {Array} points - Particle positions
+     * @param {Array} volumes - Particle volumes
+     * @param {Array} attributes - Particle attributes [N x F]
+     * @param {number} h - Kernel radius
+     * @param {Object} hashGrid - Hash grid for neighbor finding
+     * @param {number} fireRate - Override fire rate (optional)
+     * @returns {Array} Updated attributes [N x F]
+     */
+    _forwardOriginal(points, volumes, attributes, h, hashGrid, fireRate = null, useAlpha = true) {
         const numPoints = points.length;
         const currentFireRate = fireRate !== null ? fireRate : this.fireRate;
         
